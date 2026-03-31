@@ -1,10 +1,54 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from "react";
+
+const LS_KEY = "bookmark-viewer-state-v1";
 
 /* ── utils ── */
 const getDomain = (url) => { try { return new URL(url).hostname; } catch { return ""; } };
 const getFavicon = (url) => `https://www.google.com/s2/favicons?domain=${getDomain(url)}&sz=64`;
-const getThumb   = (url) => `https://image.thum.io/get/width/400/crop/600/${url}`;
+const getThumb = (url) => `https://image.thum.io/get/width/400/crop/600/${url}`;
 const uid = () => Math.random().toString(36).slice(2);
+
+function normalizeUrl(url) {
+  try {
+    const u = new URL(url.trim());
+    u.hash = "";
+    return u.href;
+  } catch {
+    return url.trim();
+  }
+}
+
+let _persistedCache;
+function readPersisted() {
+  if (_persistedCache !== undefined) return _persistedCache;
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) {
+      _persistedCache = null;
+      return null;
+    }
+    const data = JSON.parse(raw);
+    if (!data || !Array.isArray(data.bookmarks) || data.bookmarks.length === 0) {
+      _persistedCache = null;
+      return null;
+    }
+    const fromBm = [...new Set(data.bookmarks.map((b) => b.group))];
+    const groups = [...new Set([...(Array.isArray(data.groups) ? data.groups : []), ...fromBm])];
+    _persistedCache = { bookmarks: data.bookmarks, groups };
+    return _persistedCache;
+  } catch {
+    _persistedCache = null;
+    return null;
+  }
+}
+
+function savePersisted(bookmarks, groups) {
+  if (bookmarks.length === 0 && groups.length === 0) {
+    localStorage.removeItem(LS_KEY);
+    return;
+  }
+  localStorage.setItem(LS_KEY, JSON.stringify({ bookmarks, groups }));
+}
 
 /* ── parse Netscape bookmark HTML ── */
 function parseBookmarks(html) {
@@ -13,7 +57,7 @@ function parseBookmarks(html) {
   function walk(node, folder) {
     for (const child of node.children) {
       if (child.tagName === "DT") {
-        const a  = child.querySelector(":scope > A");
+        const a = child.querySelector(":scope > A");
         const h3 = child.querySelector(":scope > H3");
         const dl = child.querySelector(":scope > DL");
         if (a && a.href && !a.href.startsWith("javascript")) {
@@ -55,8 +99,181 @@ function exportHTML(bookmarks, groups) {
 ${body}</DL><p>`;
 }
 
+function clampMenuRect(clientX, clientY, w, h) {
+  const pad = 8;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  let left = clientX;
+  let top = clientY;
+  if (left + w > vw - pad) left = vw - w - pad;
+  if (top + h > vh - pad) top = vh - h - pad;
+  if (left < pad) left = pad;
+  if (top < pad) top = pad;
+  return { left, top };
+}
+
+/* ── Context menu ── */
+function CardContextMenu({
+  x,
+  y,
+  bookmark,
+  groups,
+  menuRef,
+  onClose,
+  onOpenTab,
+  onMove,
+  onDelete,
+}) {
+  const [pos, setPos] = useState({ left: x, top: y });
+  const [subOpen, setSubOpen] = useState(false);
+  const [subFlip, setSubFlip] = useState(false);
+  const moveWrapRef = useRef(null);
+  const subRef = useRef(null);
+
+  useLayoutEffect(() => {
+    const measure = () => {
+      const el = menuRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const w = Math.max(r.width, 160);
+      const h = Math.max(r.height, 80);
+      setPos(clampMenuRect(x, y, w, h));
+    };
+    measure();
+    const id = requestAnimationFrame(measure);
+    return () => cancelAnimationFrame(id);
+  }, [x, y, menuRef]);
+
+  useLayoutEffect(() => {
+    if (!subOpen || !moveWrapRef.current || !subRef.current) return;
+    const row = moveWrapRef.current.getBoundingClientRect();
+    const sub = subRef.current;
+    const sw = 200;
+    const sh = Math.min(sub.scrollHeight, 280);
+    sub.style.maxHeight = `${sh}px`;
+    let subLeft = row.right - 2;
+    let flip = false;
+    if (subLeft + sw > window.innerWidth - 8) {
+      subLeft = row.left - sw + 2;
+      flip = true;
+    }
+    setSubFlip(flip);
+    let subTop = row.top;
+    if (subTop + sh > window.innerHeight - 8) subTop = window.innerHeight - sh - 8;
+    if (subTop < 8) subTop = 8;
+    sub.style.left = `${subLeft}px`;
+    sub.style.top = `${subTop}px`;
+    sub.style.width = `${sw}px`;
+  }, [subOpen, groups.length, bookmark.id]);
+
+  const targetGroups = groups.filter((g) => g !== bookmark.group);
+
+  useEffect(() => {
+    const down = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) onClose();
+    };
+    const esc = (e) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("mousedown", down, true);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", down, true);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [onClose, menuRef]);
+
+  return (
+    <div
+      ref={menuRef}
+      className="bm-ctx"
+      style={{ left: pos.left, top: pos.top }}
+      role="menu"
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      <button type="button" className="bm-ctx__item" role="menuitem" onClick={() => { onOpenTab(bookmark.url); onClose(); }}>
+        새 탭에서 열기
+      </button>
+      <div
+        ref={moveWrapRef}
+        className="bm-ctx__move-wrap"
+        onMouseEnter={() => setSubOpen(true)}
+        onMouseLeave={() => setSubOpen(false)}
+      >
+        <div className="bm-ctx__row">
+          <span className="bm-ctx__item bm-ctx__item--static">그룹 이동</span>
+          <span className="bm-ctx__chevron" aria-hidden>{subFlip ? "◀" : "▶"}</span>
+        </div>
+        {subOpen && (
+          <div
+            ref={subRef}
+            className="bm-ctx__sub"
+            role="menu"
+            onMouseEnter={() => setSubOpen(true)}
+            onMouseLeave={() => setSubOpen(false)}
+          >
+            {targetGroups.length === 0 ? (
+              <div className="bm-ctx__sub-empty">다른 그룹 없음</div>
+            ) : (
+              targetGroups.map((g) => (
+                <button
+                  key={g}
+                  type="button"
+                  className="bm-ctx__sub-item"
+                  role="menuitem"
+                  onClick={() => { onMove(bookmark.id, g); onClose(); }}
+                >
+                  {g}
+                </button>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+      <button
+        type="button"
+        className="bm-ctx__item bm-ctx__item--danger"
+        role="menuitem"
+        onClick={() => { onDelete(bookmark.id); onClose(); }}
+      >
+        삭제
+      </button>
+    </div>
+  );
+}
+
+/* ── Lazy thumbnail ── */
+function LazyThumb({ url, onError }) {
+  const wrapRef = useRef(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      ([e]) => {
+        if (e.isIntersecting) {
+          setVisible(true);
+          io.disconnect();
+        }
+      },
+      { root: null, rootMargin: "120px", threshold: 0.01 }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  return (
+    <div ref={wrapRef} className="bm-card__thumb-wrap">
+      {visible ? (
+        <img src={url} alt="" className="bm-card__img" onError={onError} />
+      ) : (
+        <div className="bm-card__img bm-card__img--placeholder" aria-hidden />
+      )}
+    </div>
+  );
+}
+
 /* ── Card ── */
-function Card({ bookmark, selected, onToggle }) {
+function Card({ bookmark, selected, onToggle, onContextMenu }) {
   const [thumbFailed, setThumbFailed] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [coarsePointer, setCoarsePointer] = useState(false);
@@ -69,11 +286,18 @@ function Card({ bookmark, selected, onToggle }) {
   }, []);
   const showCheckbox = hovered || selected || coarsePointer;
 
+  const handleCtx = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onContextMenu(e.clientX, e.clientY, bookmark);
+  };
+
   return (
     <div
       className="bm-card"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onContextMenu={handleCtx}
     >
       {showCheckbox && (
         <div
@@ -86,17 +310,13 @@ function Card({ bookmark, selected, onToggle }) {
         </div>
       )}
 
-      <a href={bookmark.url} target="_blank" rel="noopener noreferrer" className="bm-card__link">
+      <a href={bookmark.url} target="_blank" rel="noopener noreferrer" className="bm-card__link" onContextMenu={handleCtx}>
         {thumbFailed ? (
           <div className="bm-card__thumb bm-card__thumb--fallback">
-            <img src={getFavicon(bookmark.url)} width={32} height={32} alt="" onError={(e) => (e.target.style.display = "none")} />
+            <img src={getFavicon(bookmark.url)} width={32} height={32} alt="" onError={(e) => { e.target.style.display = "none"; }} />
           </div>
         ) : (
-          <img
-            src={getThumb(bookmark.url)} alt="" loading="lazy"
-            className="bm-card__img"
-            onError={() => setThumbFailed(true)}
-          />
+          <LazyThumb url={getThumb(bookmark.url)} onError={() => setThumbFailed(true)} />
         )}
         <div className="bm-card__body">
           <div className="bm-card__title">{bookmark.title}</div>
@@ -121,10 +341,7 @@ function GroupItem({ name, active, count, onClick, onRename, onDelete, undeletab
   };
 
   return (
-    <div
-      onClick={onClick}
-      className={`bm-group ${active ? "bm-group--active" : ""}`}
-    >
+    <div onClick={onClick} className={`bm-group ${active ? "bm-group--active" : ""}`}>
       {editing ? (
         <input
           ref={inputRef} value={val} autoFocus
@@ -166,10 +383,7 @@ function MoveModal({ groups, selectedCount, onMove, onCancel }) {
         <p id="bm-move-title" className="bm-modal__title">{selectedCount}개를 이동할 그룹 선택</p>
         <div className="bm-modal__list">
           {groups.map((g) => (
-            <button
-              key={g} type="button" onClick={() => onMove(g)}
-              className="bm-modal__item"
-            >
+            <button key={g} type="button" onClick={() => onMove(g)} className="bm-modal__item">
               {g}
             </button>
           ))}
@@ -210,8 +424,8 @@ function UploadZone({ onLoad }) {
 
 /* ── Root ── */
 export default function BookmarkViewer() {
-  const [bookmarks, setBookmarks] = useState([]);
-  const [groups, setGroups] = useState([]);
+  const [bookmarks, setBookmarks] = useState(() => readPersisted()?.bookmarks ?? []);
+  const [groups, setGroups] = useState(() => readPersisted()?.groups ?? []);
   const [activeGroup, setActiveGroup] = useState("all");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(new Set());
@@ -219,6 +433,19 @@ export default function BookmarkViewer() {
   const [newGroupName, setNewGroupName] = useState("");
   const [addingGroup, setAddingGroup] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sortOrder, setSortOrder] = useState("default");
+  const [duplicatesOnly, setDuplicatesOnly] = useState(false);
+  const [exportDirty, setExportDirty] = useState(false);
+  const [ctx, setCtx] = useState(null);
+  const ctxMenuRef = useRef(null);
+
+  useEffect(() => {
+    savePersisted(bookmarks, groups);
+  }, [bookmarks, groups]);
+
+  useEffect(() => {
+    if (duplicatesOnly && duplicateExtraCount === 0) setDuplicatesOnly(false);
+  }, [duplicatesOnly, duplicateExtraCount]);
 
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 768px)");
@@ -228,6 +455,7 @@ export default function BookmarkViewer() {
   }, []);
 
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
+  const markDirty = useCallback(() => setExportDirty(true), []);
 
   const handleLoad = useCallback((html) => {
     const parsed = parseBookmarks(html);
@@ -237,6 +465,22 @@ export default function BookmarkViewer() {
     setActiveGroup("all");
     setSelected(new Set());
     setQuery("");
+    setDuplicatesOnly(false);
+    setExportDirty(false);
+  }, []);
+
+  const handleReset = useCallback(() => {
+    localStorage.removeItem(LS_KEY);
+    _persistedCache = null;
+    setBookmarks([]);
+    setGroups([]);
+    setSelected(new Set());
+    setQuery("");
+    setActiveGroup("all");
+    setDuplicatesOnly(false);
+    setSortOrder("default");
+    setExportDirty(false);
+    setCtx(null);
   }, []);
 
   const addGroup = () => {
@@ -245,22 +489,25 @@ export default function BookmarkViewer() {
     setGroups((g) => [...g, name]);
     setNewGroupName("");
     setAddingGroup(false);
+    markDirty();
   };
 
   const deleteGroup = (name) => {
-    setBookmarks((bm) => bm.map((b) => b.group === name ? { ...b, group: "미분류" } : b));
+    setBookmarks((bm) => bm.map((b) => (b.group === name ? { ...b, group: "미분류" } : b)));
     setGroups((prev) => {
       const next = prev.filter((x) => x !== name);
       return next.includes("미분류") ? next : ["미분류", ...next];
     });
     if (activeGroup === name) setActiveGroup("all");
+    markDirty();
   };
 
   const renameGroup = (oldName, newName) => {
     if (groups.includes(newName)) return;
     setGroups((g) => g.map((x) => (x === oldName ? newName : x)));
-    setBookmarks((bm) => bm.map((b) => b.group === oldName ? { ...b, group: newName } : b));
+    setBookmarks((bm) => bm.map((b) => (b.group === oldName ? { ...b, group: newName } : b)));
     if (activeGroup === oldName) setActiveGroup(newName);
+    markDirty();
   };
 
   const toggleSelect = (id) => setSelected((s) => {
@@ -270,13 +517,64 @@ export default function BookmarkViewer() {
   });
 
   const moveSelected = (targetGroup) => {
-    setBookmarks((bm) => bm.map((b) => selected.has(b.id) ? { ...b, group: targetGroup } : b));
+    setBookmarks((bm) => bm.map((b) => (selected.has(b.id) ? { ...b, group: targetGroup } : b)));
     setSelected(new Set());
     setShowMoveModal(false);
+    markDirty();
   };
 
-  const allGroups = groups.includes("미분류") ? groups
-    : bookmarks.some((b) => b.group === "미분류") ? ["미분류", ...groups] : groups;
+  const moveOne = (id, targetGroup) => {
+    setBookmarks((bm) => bm.map((b) => (b.id === id ? { ...b, group: targetGroup } : b)));
+    markDirty();
+  };
+
+  const deleteOne = (id) => {
+    setBookmarks((bm) => bm.filter((b) => b.id !== id));
+    setSelected((s) => {
+      const next = new Set(s);
+      next.delete(id);
+      return next;
+    });
+    markDirty();
+  };
+
+  const removeDuplicateUrls = () => {
+    const seen = new Set();
+    setBookmarks((bm) => {
+      const out = [];
+      for (const b of bm) {
+        const k = normalizeUrl(b.url);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        out.push(b);
+      }
+      return out;
+    });
+    markDirty();
+  };
+
+  const allGroups = useMemo(() => {
+    const g = groups.includes("미분류") ? groups
+      : bookmarks.some((b) => b.group === "미분류") ? ["미분류", ...groups] : groups;
+    return g;
+  }, [groups, bookmarks]);
+
+  const urlCounts = useMemo(() => {
+    const m = new Map();
+    for (const b of bookmarks) {
+      const k = normalizeUrl(b.url);
+      m.set(k, (m.get(k) || 0) + 1);
+    }
+    return m;
+  }, [bookmarks]);
+
+  const duplicateExtraCount = useMemo(() => {
+    let n = 0;
+    for (const c of urlCounts.values()) {
+      if (c > 1) n += c - 1;
+    }
+    return n;
+  }, [urlCounts]);
 
   const handleExport = () => {
     const html = exportHTML(bookmarks, allGroups);
@@ -286,16 +584,41 @@ export default function BookmarkViewer() {
     a.download = "bookmarks_export.html";
     a.click();
     URL.revokeObjectURL(a.href);
+    setExportDirty(false);
   };
 
-  const filtered = bookmarks
-    .filter((b) => activeGroup === "all" || b.group === activeGroup)
-    .filter((b) => !query || b.title.toLowerCase().includes(query.toLowerCase()) || b.url.toLowerCase().includes(query.toLowerCase()));
+  const openContextMenu = useCallback((clientX, clientY, bookmark) => {
+    setCtx({ x: clientX, y: clientY, bookmark });
+  }, []);
+
+  const closeContextMenu = useCallback(() => setCtx(null), []);
+
+  const filtered = useMemo(() => {
+    let list = bookmarks
+      .filter((b) => activeGroup === "all" || b.group === activeGroup)
+      .filter((b) => !query || b.title.toLowerCase().includes(query.toLowerCase()) || b.url.toLowerCase().includes(query.toLowerCase()));
+    if (duplicatesOnly) {
+      list = list.filter((b) => (urlCounts.get(normalizeUrl(b.url)) || 0) > 1);
+    }
+    if (sortOrder === "name") {
+      list = [...list].sort((a, b) => a.title.localeCompare(b.title, "ko"));
+    } else if (sortOrder === "domain") {
+      list = [...list].sort((a, b) => {
+        const da = getDomain(a.url);
+        const db = getDomain(b.url);
+        const c = da.localeCompare(db, "ko");
+        return c !== 0 ? c : a.title.localeCompare(b.title, "ko");
+      });
+    }
+    return list;
+  }, [bookmarks, activeGroup, query, duplicatesOnly, urlCounts, sortOrder]);
 
   const pickGroup = (g) => {
     setActiveGroup(g);
     closeSidebar();
   };
+
+  const ctxBookmark = ctx?.bookmark;
 
   if (bookmarks.length === 0) {
     return (
@@ -313,6 +636,20 @@ export default function BookmarkViewer() {
           selectedCount={selected.size}
           onMove={moveSelected}
           onCancel={() => setShowMoveModal(false)}
+        />
+      )}
+
+      {ctxBookmark && (
+        <CardContextMenu
+          x={ctx.x}
+          y={ctx.y}
+          bookmark={ctxBookmark}
+          groups={allGroups}
+          menuRef={ctxMenuRef}
+          onClose={closeContextMenu}
+          onOpenTab={(url) => window.open(url, "_blank", "noopener,noreferrer")}
+          onMove={moveOne}
+          onDelete={deleteOne}
         />
       )}
 
@@ -334,10 +671,7 @@ export default function BookmarkViewer() {
         <span className="bm-topbar__title">Bookmark Viewer</span>
       </header>
 
-      <aside
-        id="bm-sidebar"
-        className={`bm-sidebar ${sidebarOpen ? "bm-sidebar--open" : ""}`}
-      >
+      <aside id="bm-sidebar" className={`bm-sidebar ${sidebarOpen ? "bm-sidebar--open" : ""}`}>
         <p className="bm-sidebar__label">그룹</p>
 
         <div
@@ -369,9 +703,7 @@ export default function BookmarkViewer() {
                 placeholder="그룹 이름"
                 className="bm-add-row__input"
               />
-              <button type="button" onClick={addGroup} className="bm-add-row__submit">
-                +
-              </button>
+              <button type="button" onClick={addGroup} className="bm-add-row__submit">+</button>
             </div>
           ) : (
             <button type="button" onClick={() => setAddingGroup(true)} className="bm-add-group">
@@ -381,14 +713,14 @@ export default function BookmarkViewer() {
         </div>
 
         <div className="bm-sidebar__footer">
-          <button type="button" onClick={handleExport} className="bm-btn bm-btn--primary">
-           보내기 (.html)
-          </button>
           <button
             type="button"
-            onClick={() => { setBookmarks([]); setGroups([]); setSelected(new Set()); }}
-            className="bm-btn bm-btn--ghost"
+            onClick={handleExport}
+            className={`bm-btn bm-btn--primary ${exportDirty ? "bm-btn--unsaved" : ""}`}
           >
+           보내기 (.html)
+          </button>
+          <button type="button" onClick={handleReset} className="bm-btn bm-btn--ghost">
             다시 불러오기
           </button>
         </div>
@@ -404,6 +736,34 @@ export default function BookmarkViewer() {
             className="bm-toolbar__search"
             enterKeyHint="search"
           />
+          <label className="bm-toolbar__sort-label">
+            <span className="bm-sr-only">정렬</span>
+            <select
+              className="bm-toolbar__select"
+              value={sortOrder}
+              onChange={(e) => setSortOrder(e.target.value)}
+              aria-label="정렬"
+            >
+              <option value="default">기본 (파일 순서)</option>
+              <option value="name">이름순 (가나다)</option>
+              <option value="domain">도메인순</option>
+            </select>
+          </label>
+          {duplicateExtraCount > 0 && (
+            <button
+              type="button"
+              className={`bm-badge ${duplicatesOnly ? "bm-badge--active" : ""}`}
+              onClick={() => setDuplicatesOnly((v) => !v)}
+              title={duplicatesOnly ? "전체 목록으로" : "중복 URL만 보기"}
+            >
+              중복 {duplicateExtraCount}개
+            </button>
+          )}
+          {duplicatesOnly && duplicateExtraCount > 0 && (
+            <button type="button" className="bm-toolbar__dedupe" onClick={removeDuplicateUrls}>
+              중복 정리 (URL당 1개만 유지)
+            </button>
+          )}
           {selected.size > 0 && (
             <>
               <span className="bm-toolbar__meta">{selected.size}개 선택</span>
@@ -424,7 +784,13 @@ export default function BookmarkViewer() {
           ) : (
             <div className="bm-grid">
               {filtered.map((b) => (
-                <Card key={b.id} bookmark={b} selected={selected.has(b.id)} onToggle={toggleSelect} />
+                <Card
+                  key={b.id}
+                  bookmark={b}
+                  selected={selected.has(b.id)}
+                  onToggle={toggleSelect}
+                  onContextMenu={openContextMenu}
+                />
               ))}
             </div>
           )}

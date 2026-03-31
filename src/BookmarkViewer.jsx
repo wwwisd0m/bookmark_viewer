@@ -349,7 +349,7 @@ function Card({ bookmark, selected, onToggle, onContextMenu }) {
 }
 
 /* ── Sidebar group item ── */
-function GroupItem({ name, active, count, onClick, onRename, onDelete, undeletable }) {
+function GroupItem({ name, active, count, onClick, onRename, onDelete, undeletable, locked }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(name);
   const inputRef = useRef();
@@ -376,7 +376,7 @@ function GroupItem({ name, active, count, onClick, onRename, onDelete, undeletab
         <span className="bm-group__name">{name}</span>
       )}
       <span className="bm-group__count">{count}</span>
-      {!undeletable && (
+      {!undeletable && !locked && (
         <div className="bm-group__actions">
           <button
             type="button"
@@ -514,6 +514,7 @@ export default function BookmarkViewer() {
   };
 
   const deleteGroup = (name) => {
+    if (name === "미분류") return;
     if (!window.confirm(`「${name}」 그룹을 삭제할까요?\n해당 북마크는「미분류」로 옮겨집니다.`)) return;
     setBookmarks((bm) => bm.map((b) => (b.group === name ? { ...b, group: "미분류" } : b)));
     setGroups((prev) => {
@@ -525,6 +526,7 @@ export default function BookmarkViewer() {
   };
 
   const renameGroup = (oldName, newName) => {
+    if (oldName === "미분류") return;
     if (groups.includes(newName)) return;
     setGroups((g) => g.map((x) => (x === oldName ? newName : x)));
     setBookmarks((bm) => bm.map((b) => (b.group === oldName ? { ...b, group: newName } : b)));
@@ -716,6 +718,7 @@ export default function BookmarkViewer() {
             onRename={renameGroup}
             onDelete={deleteGroup}
             undeletable={allGroups.length === 1}
+            locked={g === "미분류"}
           />
         ))}
 

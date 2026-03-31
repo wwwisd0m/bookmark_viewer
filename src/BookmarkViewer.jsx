@@ -8,6 +8,26 @@ const getFavicon = (url) => `https://www.google.com/s2/favicons?domain=${getDoma
 const getThumb = (url) => `https://image.thum.io/get/width/400/crop/600/${url}`;
 const uid = () => Math.random().toString(36).slice(2);
 
+function IconPencil({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  );
+}
+
+function IconTrash({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <line x1="10" y1="11" x2="10" y2="17" />
+      <line x1="14" y1="11" x2="14" y2="17" />
+    </svg>
+  );
+}
+
 function normalizeUrl(url) {
   try {
     const u = new URL(url.trim());
@@ -230,10 +250,11 @@ function CardContextMenu({
       </div>
       <button
         type="button"
-        className="bm-ctx__item bm-ctx__item--danger"
+        className="bm-ctx__item bm-ctx__item--danger bm-ctx__item--row"
         role="menuitem"
         onClick={() => { onDelete(bookmark.id); onClose(); }}
       >
+        <IconTrash size={20} />
         삭제
       </button>
     </div>
@@ -313,7 +334,7 @@ function Card({ bookmark, selected, onToggle, onContextMenu }) {
       <a href={bookmark.url} target="_blank" rel="noopener noreferrer" className="bm-card__link" onContextMenu={handleCtx}>
         {thumbFailed ? (
           <div className="bm-card__thumb bm-card__thumb--fallback">
-            <img src={getFavicon(bookmark.url)} width={32} height={32} alt="" onError={(e) => { e.target.style.display = "none"; }} />
+            <img src={getFavicon(bookmark.url)} width={40} height={40} alt="" onError={(e) => { e.target.style.display = "none"; }} />
           </div>
         ) : (
           <LazyThumb url={getThumb(bookmark.url)} onError={() => setThumbFailed(true)} />
@@ -362,13 +383,17 @@ function GroupItem({ name, active, count, onClick, onRename, onDelete, undeletab
             title="이름 변경"
             onClick={(e) => { e.stopPropagation(); setEditing(true); setTimeout(() => inputRef.current?.focus(), 0); }}
             className="bm-group__btn"
-          >✎</button>
+          >
+            <IconPencil size={22} />
+          </button>
           <button
             type="button"
             title="그룹 삭제"
             onClick={(e) => { e.stopPropagation(); onDelete(name); }}
-            className="bm-group__btn"
-          >✕</button>
+            className="bm-group__btn bm-group__btn--danger"
+          >
+            <IconTrash size={22} />
+          </button>
         </div>
       )}
     </div>
@@ -489,6 +514,7 @@ export default function BookmarkViewer() {
   };
 
   const deleteGroup = (name) => {
+    if (!window.confirm(`「${name}」 그룹을 삭제할까요?\n해당 북마크는「미분류」로 옮겨집니다.`)) return;
     setBookmarks((bm) => bm.map((b) => (b.group === name ? { ...b, group: "미분류" } : b)));
     setGroups((prev) => {
       const next = prev.filter((x) => x !== name);
@@ -718,7 +744,7 @@ export default function BookmarkViewer() {
             onClick={handleExport}
             className={`bm-btn bm-btn--primary ${exportDirty ? "bm-btn--unsaved" : ""}`}
           >
-           보내기 (.html)
+           내보내기 (.html)
           </button>
           <button type="button" onClick={handleReset} className="bm-btn bm-btn--ghost">
             다시 불러오기

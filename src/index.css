@@ -116,7 +116,7 @@ body {
 }
 
 .bm-menu-btn__icon {
-  font-size: 1.1rem;
+  font-size: 1.45rem;
   line-height: 1;
 }
 
@@ -227,18 +227,37 @@ body {
 }
 
 .bm-group__btn {
-  font-size: 0.6875rem;
   background: none;
   border: none;
   cursor: pointer;
-  opacity: 0.5;
-  padding: 4px 6px;
+  opacity: 0.65;
+  padding: 6px 8px;
   color: inherit;
-  min-width: 32px;
-  min-height: 32px;
+  min-width: 40px;
+  min-height: 40px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+
+.bm-group__btn:hover,
+.bm-group__btn:focus-visible {
+  opacity: 1;
+  outline: none;
+}
+
+.bm-group__btn--danger:hover,
+.bm-group__btn--danger:focus-visible {
+  color: #b91c1c;
+}
+
+.bm-group--active .bm-group__btn--danger {
+  color: #fff;
+}
+
+.bm-group--active .bm-group__btn--danger:hover,
+.bm-group--active .bm-group__btn--danger:focus-visible {
+  color: #fecaca;
 }
 
 .bm-add-row {
@@ -425,9 +444,9 @@ body {
   top: 8px;
   left: 8px;
   z-index: 2;
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
   border: 1.5px solid #ccc;
   background: rgba(255, 255, 255, 0.95);
   display: flex;
@@ -444,8 +463,9 @@ body {
 
 .bm-card__checkmark {
   color: #fff;
-  font-size: 12px;
+  font-size: 15px;
   line-height: 1;
+  font-weight: 700;
 }
 
 .bm-card__link {
@@ -637,7 +657,7 @@ body {
 /* Export — 미저장 표시 */
 .bm-btn--unsaved {
   position: relative;
-  padding-right: 1.75rem;
+  padding-right: 2rem;
 }
 
 .bm-btn--unsaved::after {
@@ -741,6 +761,16 @@ body {
   background: #fef2f2;
 }
 
+.bm-ctx__item--row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bm-ctx__item--row svg {
+  flex-shrink: 0;
+}
+
 .bm-ctx__item--static {
   pointer-events: none;
   flex: 1;
@@ -764,7 +794,7 @@ body {
 }
 
 .bm-ctx__chevron {
-  font-size: 0.65rem;
+  font-size: 0.85rem;
   color: #888;
   padding-right: 12px;
 }

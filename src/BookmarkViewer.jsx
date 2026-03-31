@@ -444,10 +444,6 @@ export default function BookmarkViewer() {
   }, [bookmarks, groups]);
 
   useEffect(() => {
-    if (duplicatesOnly && duplicateExtraCount === 0) setDuplicatesOnly(false);
-  }, [duplicatesOnly, duplicateExtraCount]);
-
-  useEffect(() => {
     const mq = window.matchMedia("(min-width: 768px)");
     const onChange = () => { if (mq.matches) setSidebarOpen(false); };
     mq.addEventListener("change", onChange);
@@ -575,6 +571,10 @@ export default function BookmarkViewer() {
     }
     return n;
   }, [urlCounts]);
+
+  useEffect(() => {
+    if (duplicatesOnly && duplicateExtraCount === 0) setDuplicatesOnly(false);
+  }, [duplicatesOnly, duplicateExtraCount]);
 
   const handleExport = () => {
     const html = exportHTML(bookmarks, allGroups);

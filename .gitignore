@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Build
+dist/
+
+# Logs & debug
+*.log
+npm-debug.log*
+.DS_Store
+
+# Env (keep local only)
+.env
+.env.*.local
+
+# Editor
+.idea/
+.vscode/*
+!.vscode/extensions.json

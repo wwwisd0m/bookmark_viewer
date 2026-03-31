@@ -179,6 +179,13 @@ body {
   text-transform: uppercase;
 }
 
+.bm-sidebar__divider {
+  height: 0;
+  margin: 6px 4px 8px;
+  border: none;
+  border-top: 0.5px solid var(--bm-border);
+}
+
 .bm-sidebar__add {
   margin-top: 0.5rem;
 }

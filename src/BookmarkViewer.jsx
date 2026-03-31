@@ -137,11 +137,11 @@ function CardContextMenu({
   x,
   y,
   bookmark,
-  groups,
+  targetGroups,
   menuRef,
   onClose,
   onOpenTab,
-  onMove,
+  onMoveGroup,
   onDelete,
 }) {
   const [pos, setPos] = useState({ left: x, top: y });
@@ -184,9 +184,7 @@ function CardContextMenu({
     sub.style.left = `${subLeft}px`;
     sub.style.top = `${subTop}px`;
     sub.style.width = `${sw}px`;
-  }, [subOpen, groups.length, bookmark.id]);
-
-  const targetGroups = groups.filter((g) => g !== bookmark.group);
+  }, [subOpen, targetGroups.length, bookmark.id]);
 
   useEffect(() => {
     const down = (e) => {
@@ -239,7 +237,7 @@ function CardContextMenu({
                   type="button"
                   className="bm-ctx__sub-item"
                   role="menuitem"
-                  onClick={() => { onMove(bookmark.id, g); onClose(); }}
+                  onClick={() => { onMoveGroup(g); onClose(); }}
                 >
                   {g}
                 </button>
@@ -552,6 +550,22 @@ export default function BookmarkViewer() {
     markDirty();
   };
 
+  const handleContextMoveGroup = useCallback(
+    (targetGroup) => {
+      const bm = ctx?.bookmark;
+      if (!bm) return;
+      if (selected.size > 1 && selected.has(bm.id)) {
+        setBookmarks((prev) => prev.map((b) => (selected.has(b.id) ? { ...b, group: targetGroup } : b)));
+        setSelected(new Set());
+        markDirty();
+      } else {
+        setBookmarks((prev) => prev.map((b) => (b.id === bm.id ? { ...b, group: targetGroup } : b)));
+        markDirty();
+      }
+    },
+    [ctx, selected, markDirty]
+  );
+
   const deleteOne = (id) => {
     setBookmarks((bm) => bm.filter((b) => b.id !== id));
     setSelected((s) => {
@@ -621,6 +635,15 @@ export default function BookmarkViewer() {
 
   const closeContextMenu = useCallback(() => setCtx(null), []);
 
+  const contextTargetGroups = useMemo(() => {
+    const bm = ctx?.bookmark;
+    if (!bm) return [];
+    const bulk = selected.size > 1 && selected.has(bm.id);
+    const ids = bulk ? [...selected] : [bm.id];
+    const picked = bookmarks.filter((b) => ids.includes(b.id));
+    return allGroups.filter((g) => !picked.every((b) => b.group === g));
+  }, [ctx, selected, bookmarks, allGroups]);
+
   const filtered = useMemo(() => {
     let list = bookmarks
       .filter((b) => activeGroup === "all" || b.group === activeGroup)
@@ -628,18 +651,31 @@ export default function BookmarkViewer() {
     if (duplicatesOnly) {
       list = list.filter((b) => (urlCounts.get(normalizeUrl(b.url)) || 0) > 1);
     }
+
+    const byName = (a, b) => a.title.localeCompare(b.title, "ko");
+    const byDomain = (a, b) => {
+      const da = getDomain(a.url);
+      const db = getDomain(b.url);
+      const c = da.localeCompare(db, "ko");
+      return c !== 0 ? c : a.title.localeCompare(b.title, "ko");
+    };
+
+    if (selected.size > 1 && sortOrder !== "default") {
+      const selectedInView = list.filter((b) => selected.has(b.id));
+      const restInView = list.filter((b) => !selected.has(b.id));
+      let sortedSel = [...selectedInView];
+      if (sortOrder === "name") sortedSel.sort(byName);
+      else if (sortOrder === "domain") sortedSel.sort(byDomain);
+      return [...sortedSel, ...restInView];
+    }
+
     if (sortOrder === "name") {
-      list = [...list].sort((a, b) => a.title.localeCompare(b.title, "ko"));
+      list = [...list].sort(byName);
     } else if (sortOrder === "domain") {
-      list = [...list].sort((a, b) => {
-        const da = getDomain(a.url);
-        const db = getDomain(b.url);
-        const c = da.localeCompare(db, "ko");
-        return c !== 0 ? c : a.title.localeCompare(b.title, "ko");
-      });
+      list = [...list].sort(byDomain);
     }
     return list;
-  }, [bookmarks, activeGroup, query, duplicatesOnly, urlCounts, sortOrder]);
+  }, [bookmarks, activeGroup, query, duplicatesOnly, urlCounts, sortOrder, selected]);
 
   const pickGroup = (g) => {
     setActiveGroup(g);
@@ -655,6 +691,10 @@ export default function BookmarkViewer() {
       </div>
     );
   }
+
+  const sidebarCustomGroups = allGroups.filter((g) => g !== "미분류");
+  const sidebarShowMisc = allGroups.includes("미분류");
+  const sidebarDividerAfterAll = sidebarShowMisc || sidebarCustomGroups.length > 0;
 
   return (
     <div className="bm-app">
@@ -672,11 +712,11 @@ export default function BookmarkViewer() {
           x={ctx.x}
           y={ctx.y}
           bookmark={ctxBookmark}
-          groups={allGroups}
+          targetGroups={contextTargetGroups}
           menuRef={ctxMenuRef}
           onClose={closeContextMenu}
           onOpenTab={(url) => window.open(url, "_blank", "noopener,noreferrer")}
-          onMove={moveOne}
+          onMoveGroup={handleContextMoveGroup}
           onDelete={deleteOne}
         />
       )}
@@ -710,17 +750,39 @@ export default function BookmarkViewer() {
           <span className="bm-group__count">{bookmarks.length}</span>
         </div>
 
-        {allGroups.map((g) => (
-          <GroupItem
-            key={g} name={g} active={activeGroup === g}
-            count={bookmarks.filter((b) => b.group === g).length}
-            onClick={() => pickGroup(g)}
-            onRename={renameGroup}
-            onDelete={deleteGroup}
-            undeletable={allGroups.length === 1}
-            locked={g === "미분류"}
-          />
-        ))}
+        <>
+          {sidebarDividerAfterAll && <div className="bm-sidebar__divider" role="separator" />}
+          {sidebarShowMisc && (
+            <GroupItem
+              name="미분류"
+              active={activeGroup === "미분류"}
+              count={bookmarks.filter((b) => b.group === "미분류").length}
+              onClick={() => pickGroup("미분류")}
+              onRename={renameGroup}
+              onDelete={deleteGroup}
+              undeletable={allGroups.length === 1}
+              locked
+            />
+          )}
+          {sidebarCustomGroups.length > 0 && (
+            <>
+              {sidebarShowMisc && <div className="bm-sidebar__divider" role="separator" />}
+              {sidebarCustomGroups.map((g) => (
+                <GroupItem
+                  key={g}
+                  name={g}
+                  active={activeGroup === g}
+                  count={bookmarks.filter((b) => b.group === g).length}
+                  onClick={() => pickGroup(g)}
+                  onRename={renameGroup}
+                  onDelete={deleteGroup}
+                  undeletable={allGroups.length === 1}
+                  locked={false}
+                />
+              ))}
+            </>
+          )}
+        </>
 
         <div className="bm-sidebar__add">
           {addingGroup ? (

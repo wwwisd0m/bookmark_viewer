@@ -8,7 +8,7 @@ const getFavicon = (url) => `https://www.google.com/s2/favicons?domain=${getDoma
 const getThumb = (url) => `https://image.thum.io/get/width/400/crop/600/${url}`;
 const uid = () => Math.random().toString(36).slice(2);
 
-function IconPencil({ size = 20 }) {
+function IconPencil({ size = 18 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M12 20h9" />
@@ -17,7 +17,7 @@ function IconPencil({ size = 20 }) {
   );
 }
 
-function IconTrash({ size = 20 }) {
+function IconTrash({ size = 18 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <polyline points="3 6 5 6 21 6" />
@@ -254,7 +254,7 @@ function CardContextMenu({
         role="menuitem"
         onClick={() => { onDelete(bookmark.id); onClose(); }}
       >
-        <IconTrash size={20} />
+        <IconTrash />
         삭제
       </button>
     </div>
@@ -384,7 +384,7 @@ function GroupItem({ name, active, count, onClick, onRename, onDelete, undeletab
             onClick={(e) => { e.stopPropagation(); setEditing(true); setTimeout(() => inputRef.current?.focus(), 0); }}
             className="bm-group__btn"
           >
-            <IconPencil size={22} />
+            <IconPencil />
           </button>
           <button
             type="button"
@@ -392,7 +392,7 @@ function GroupItem({ name, active, count, onClick, onRename, onDelete, undeletab
             onClick={(e) => { e.stopPropagation(); onDelete(name); }}
             className="bm-group__btn bm-group__btn--danger"
           >
-            <IconTrash size={22} />
+            <IconTrash />
           </button>
         </div>
       )}

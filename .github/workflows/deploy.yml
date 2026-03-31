@@ -1,21 +1,24 @@
 name: Deploy to GitHub Pages
 
+# 빌드된 dist만 gh-pages 브랜치에 올립니다.
+# 저장소 Settings → Pages → Build and deployment → Source:
+#   "Deploy from a branch" → Branch: gh-pages, Folder: / (root)
+# (main 브랜치 루트 index.html은 개발용이라 그대로 두면 빈 화면입니다.)
+
 on:
   push:
     branches: [main, master]
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
   group: pages
   cancel-in-progress: true
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,20 +32,12 @@ jobs:
 
       - name: Build
         env:
-          # 저장소 이름과 동일해야 함 (하위 경로 불일치 시 빈 화면)
           BASE_PATH: /bookmark_viewer/
         run: npm run build
 
-      - uses: actions/upload-pages-artifact@v3
+      - name: Push dist to gh-pages branch
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          path: dist
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          force_orphan: true

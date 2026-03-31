@@ -29,7 +29,8 @@ jobs:
 
       - name: Build
         env:
-          BASE_PATH: /${{ github.event.repository.name }}/
+          # 저장소 이름과 동일해야 함 (하위 경로 불일치 시 빈 화면)
+          BASE_PATH: /bookmark_viewer/
         run: npm run build
 
       - uses: actions/upload-pages-artifact@v3

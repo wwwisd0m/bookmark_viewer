@@ -329,7 +329,7 @@ function Card({ bookmark, selected, onToggle, onContextMenu }) {
         </div>
       )}
 
-      <a href={bookmark.url} target="_blank" rel="noopener noreferrer" className="bm-card__link" onContextMenu={handleCtx}>
+      <div className="bm-card__media" onContextMenu={handleCtx}>
         {thumbFailed ? (
           <div className="bm-card__thumb bm-card__thumb--fallback">
             <img src={getFavicon(bookmark.url)} width={40} height={40} alt="" onError={(e) => { e.target.style.display = "none"; }} />
@@ -337,10 +337,20 @@ function Card({ bookmark, selected, onToggle, onContextMenu }) {
         ) : (
           <LazyThumb url={getThumb(bookmark.url)} onError={() => setThumbFailed(true)} />
         )}
-        <div className="bm-card__body">
-          <div className="bm-card__title">{bookmark.title}</div>
-          <div className="bm-card__domain">{getDomain(bookmark.url)}</div>
-        </div>
+      </div>
+      <div className="bm-card__body" onContextMenu={handleCtx}>
+        <div className="bm-card__title">{bookmark.title}</div>
+        <div className="bm-card__domain">{getDomain(bookmark.url)}</div>
+      </div>
+      <a
+        href={bookmark.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="bm-card__open-btn"
+        onClick={(e) => e.stopPropagation()}
+        onContextMenu={handleCtx}
+      >
+        사이트 이동하기
       </a>
     </div>
   );
